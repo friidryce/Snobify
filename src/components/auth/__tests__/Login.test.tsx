@@ -1,25 +1,28 @@
-import { jest } from '@jest/globals'
-import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
-import { LoginPage } from '../Login'
-import { signIn } from 'next-auth/react'
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { LoginPage } from '../Login';
+import { signIn } from 'next-auth/react';
 
+// Mock next-auth
 jest.mock('next-auth/react', () => ({
-  signIn: jest.fn(),
-}))
+  signIn: jest.fn()
+}));
 
-// Test LoginPage and Spotify Login Button (with Spotify Login Text)
 describe('LoginPage', () => {
-  it('renders login page and button correctly', () => {
-    render(<LoginPage />)
+  it('renders the Spotify login button', () => {
+    render(<LoginPage />);
+    
+    const loginButton = screen.getByRole('button', { name: /continue with spotify/i });
+    expect(loginButton).toBeInTheDocument();
+  });
 
-    expect(screen.getByRole('button', { name: /continue with spotify/i })).toBeInTheDocument()
-  })
-
-  it('calls signIn with "spotify" when clicked', async () => {
-    const user = userEvent.setup()
-    render(<LoginPage />)
-    await user.click(screen.getByRole('button', { name: /continue with spotify/i }))
-    expect(signIn).toHaveBeenCalledWith('spotify')
-  })
-}) 
+  it('calls signIn when the Spotify button is clicked', async () => {
+    const user = userEvent.setup();
+    render(<LoginPage />);
+    
+    const loginButton = screen.getByRole('button', { name: /continue with spotify/i });
+    await user.click(loginButton);
+    
+    expect(signIn).toHaveBeenCalledWith('spotify');
+  });
+});

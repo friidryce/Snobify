@@ -1,6 +1,5 @@
 import NextAuth, { DefaultSession, NextAuthOptions } from "next-auth";
 import SpotifyProvider from "next-auth/providers/spotify";
-import { JWT } from "next-auth/jwt";
 
 // Extend the built-in session types
 declare module "next-auth" {

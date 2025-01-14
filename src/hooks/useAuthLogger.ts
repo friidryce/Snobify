@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Session } from 'next-auth';
+import { useEffect } from "react";
+import { Session } from "next-auth";
 
 export function useAuthLogger(session: Session | null) {
   useEffect(() => {
@@ -7,4 +7,4 @@ export function useAuthLogger(session: Session | null) {
       console.log("Logged in successfully as:", session.user);
     }
   }, [session]);
-} 
+}

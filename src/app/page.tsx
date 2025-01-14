@@ -1,35 +1,112 @@
-'use client';
+"use client";
 import { useSession } from "next-auth/react";
-import { SpotifyLoginButton } from "@/components/auth/SpotifyLoginButton";
-import { SignOutButton } from "@/components/auth/SignOutButton";
-import { Footer } from "@/components/layout/Footer";
 import { useAuthLogger } from "@/hooks/useAuthLogger";
+import { LoginPage } from "@/components/auth/Login";
+import { Navbar } from "@/components/layout/Navbar";
+import { useEffect, useRef, useState } from "react";
 
-export default function SpotifyLoginPage() {
+export default function Home() {
   const { data: session, status } = useSession();
   useAuthLogger(session);
 
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [cache, setCache] = useState<{ [value: string]: any }>({});
+  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchAutocompleteOptions = async (value: string) => {
+    setLoading(true);
+
+    if (cache[value]) {
+      setSearchResults(cache[value]);
+      setLoading(false);
+      return;
+    }
+
+    // fetch Spotify API
+    try {
+      const response = await fetch(
+        `https://api.spotify.com/v1/search?q=${encodeURIComponent(
+          value
+        )}&type=track&limit=5`,
+        {
+          headers: {
+            Authorization: `Bearer ${session?.accessToken}`,
+          },
+        }
+      );
+      const data = await response.json();
+
+      setCache((oldCache) => ({
+        ...oldCache,
+        [value]: data.tracks.items,
+      }));
+
+      setSearchResults(data.tracks.items);
+    } catch (err) {
+      // TODO: Display error message
+      console.error("Error fetching search results: ", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (debounceTimer.current) {
+      clearTimeout(debounceTimer.current);
+    }
+
+    debounceTimer.current = setTimeout(() => {
+      if (searchQuery) {
+        fetchAutocompleteOptions(searchQuery);
+      } else {
+        setSearchResults([]);
+      }
+    }, 300); // Adjust the delay as needed
+
+    return () => {
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
+  }, [searchQuery]);
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family:var(--font-geist-sans)] bg-gray-900 text-white">
-      <main className="flex flex-col gap-8 row-start-2 items-center">
-        <h1 className="text-4xl font-bold mb-8 text-white">Snobify</h1>
-        
-        <div className="flex flex-col items-center gap-6 p-8 rounded-lg border border-gray-700 bg-gray-800 shadow-xl">
-          <p className="text-gray-300 text-center max-w-md">
-            {status === 'authenticated' 
-              ? `Welcome back, ${session.user?.name}!`
-              : 'Connect your Spotify account to get started. We\'ll only access your basic profile information.'}
-          </p>
+    <>
+      {status !== "authenticated" ? (
+        <LoginPage />
+      ) : (
+        <div className="min-h-screen bg-zinc-950 text-white">
+          <Navbar />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-1/2 relative">
+              <input
+                type="text"
+                placeholder="Search for songs, artists, or albums..."
+                className="w-full px-4 py-3 bg-zinc-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500"
+                onInput={(e) => setSearchQuery(e.currentTarget.value)}
+              />
 
-          {status === 'authenticated' ? <SignOutButton /> : <SpotifyLoginButton />}
-
-          <p className="text-xs text-gray-400">
-            By continuing, you agree to our Terms of Service and Privacy Policy
-          </p>
+              {/* Autocomplete dropdown */}
+              <div className=" w-full mt-2 bg-zinc-800 rounded-lg shadow-lg max-h-96 overflow-y-auto">
+                {searchResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className="px-4 py-3 hover:bg-zinc-700 cursor-pointer transition"
+                  >
+                    <div className="text-white">{result.name}</div>
+                    <div className="text-sm text-gray-400">
+                      {result.artists[0].name}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
-
-      <Footer />
-    </div>
+      )}
+    </>
   );
 }

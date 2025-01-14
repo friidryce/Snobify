@@ -1,7 +1,7 @@
 import { signOut, useSession } from "next-auth/react";
 import Link from "next/link";
 import Image from "next/image";
-import { Menu } from "@headlessui/react";
+import { Menu, MenuItems, MenuItem, MenuButton } from "@headlessui/react";
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -34,7 +34,7 @@ export function Navbar() {
       </div>
 
       <Menu as="div" className="relative flex items-center">
-        <Menu.Button className="rounded-full overflow-hidden hover:ring-2 hover:ring-green-500 transition">
+        <MenuButton className="rounded-full overflow-hidden hover:ring-2 hover:ring-green-500 transition">
           <Image
             src={session?.user?.image || "/default-avatar.png"}
             alt="Profile"
@@ -42,10 +42,10 @@ export function Navbar() {
             height={40}
             className="rounded-full"
           />
-        </Menu.Button>
+        </MenuButton>
 
-        <Menu.Items className="absolute right-0 top-12 w-48 bg-zinc-700 rounded-md shadow-lg py-1">
-          <Menu.Item>
+        <MenuItems className="absolute right-0 top-12 w-48 bg-zinc-700 rounded-md shadow-lg py-1">
+          <MenuItem>
             {({ active }) => (
               <Link
                 href="/dashboard"
@@ -56,8 +56,8 @@ export function Navbar() {
                 Dashboard
               </Link>
             )}
-          </Menu.Item>
-          <Menu.Item>
+          </MenuItem>
+          <MenuItem>
             {({ active }) => (
               <Link
                 href="/settings"
@@ -68,9 +68,9 @@ export function Navbar() {
                 Settings
               </Link>
             )}
-          </Menu.Item>
+          </MenuItem>
           <hr className="border-zinc-600 my-1" />
-          <Menu.Item>
+          <MenuItem>
             {({ active }) => (
               <button
                 onClick={() => signOut()}
@@ -81,8 +81,8 @@ export function Navbar() {
                 Sign out
               </button>
             )}
-          </Menu.Item>
-        </Menu.Items>
+          </MenuItem>
+        </MenuItems>
       </Menu>
     </nav>
   );

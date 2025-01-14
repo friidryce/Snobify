@@ -6,6 +6,7 @@
 import type {Config} from 'jest';
 
 const config: Config = {
+  preset: 'ts-jest',
   // All imported modules in your tests should be mocked automatically
   // automock: false,
 
@@ -170,7 +171,7 @@ const config: Config = {
   // A map from regular expressions to paths to transformers
   transform: {
     '^.+\\.(t|j)sx?$': ['ts-jest', {
-      tsconfig: './tsconfig.json',
+      tsconfig: './tsconfig.test.json',
       jsx: 'react-jsx'
     }],
   },

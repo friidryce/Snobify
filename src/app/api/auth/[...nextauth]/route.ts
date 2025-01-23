@@ -26,7 +26,7 @@ const handler = NextAuth({
       clientSecret: process.env.SPOTIFY_CLIENT_SECRET as string,
       authorization: {
         params: {
-          scope: "user-read-email user-read-private", // Add more scopes as needed
+          scope: "user-read-email user-read-private playlist-read-private playlist-read-collaborative", // Add more scopes as needed
         },
       },
     }),

@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
-import Link from "next/link";
+import { PlaylistDropdown } from "@/components/playlists/PlaylistDropdown";
 
 interface Playlist {
   id: string;
@@ -132,25 +132,31 @@ export default function PlaylistsPage() {
             playlist.name.toLowerCase().includes(searchQuery.toLowerCase())
           )
           .map((playlist) => (
-          <Link 
-            href={`/playlist/${playlist.id}`} 
-            key={playlist.id}
-            className="flex items-center gap-4 p-4 bg-zinc-900 rounded-lg hover:bg-zinc-800 transition-colors"
+          <div 
+            key={playlist.id} 
+            className="flex items-center gap-4 p-4 bg-zinc-900 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
+            onClick={() => {
+              // Future implementation: Navigate to playlist contents
+              console.log(`Clicked playlist: ${playlist.id}`);
+            }}
           >
-            <Image
-              src={playlist.images[0]?.url || '/default-playlist.png'}
-              alt={playlist.name}
-              width={64}
-              height={64}
-              className="rounded-md"
-            />
-            <div>
-              <h2 className="font-semibold">{playlist.name}</h2>
-              <p className="text-sm text-gray-400">
-                {playlist.tracks.total} tracks • By {playlist.owner.display_name}
-              </p>
+            <div className="flex items-center gap-4 flex-grow">
+              <Image
+                src={playlist.images[0]?.url || '/default-playlist.png'}
+                alt={playlist.name}
+                width={64}
+                height={64}
+                className="rounded-md"
+              />
+              <div>
+                <h2 className="font-semibold text-left">{playlist.name}</h2>
+                <p className="text-sm text-gray-400 text-left">
+                  {playlist.tracks.total} tracks • By {playlist.owner.display_name}
+                </p>
+              </div>
             </div>
-          </Link>
+            <PlaylistDropdown playlistId={playlist.id} />
+          </div>
         ))}
       </div>
     </>

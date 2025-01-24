@@ -3,6 +3,7 @@ import React, { useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import Image from "next/image";
 import { PlaylistDropdown } from "@/components/playlists/PlaylistDropdown";
+import { useRouter } from "next/navigation";
 
 interface Playlist {
   id: string;
@@ -18,6 +19,7 @@ interface Playlist {
 
 export default function PlaylistsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +55,10 @@ export default function PlaylistsPage() {
       fetchPlaylists();
     }
   }, [session]);
+
+  const handlePlaylistClick = (playlistId: string) => {
+    router.push(`/playlist/${playlistId}`);
+  };
 
   return (
     <>
@@ -135,10 +141,7 @@ export default function PlaylistsPage() {
           <div 
             key={playlist.id} 
             className="flex items-center gap-4 p-4 bg-zinc-900 rounded-lg hover:bg-zinc-800 transition-colors cursor-pointer"
-            onClick={() => {
-              // Future implementation: Navigate to playlist contents
-              console.log(`Clicked playlist: ${playlist.id}`);
-            }}
+            onClick={() => handlePlaylistClick(playlist.id)}
           >
             <div className="flex items-center gap-4 flex-grow">
               <Image
@@ -155,7 +158,9 @@ export default function PlaylistsPage() {
                 </p>
               </div>
             </div>
-            <PlaylistDropdown playlistId={playlist.id} />
+            <div onClick={(e) => e.stopPropagation()}>
+              <PlaylistDropdown playlistId={playlist.id} />
+            </div>
           </div>
         ))}
       </div>

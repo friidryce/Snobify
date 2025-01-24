@@ -12,6 +12,47 @@ interface PlaylistTrack {
   track: Track;
 }
 
+interface PaginatedResponse {
+  items: PlaylistTrack[];
+  next: string | null;
+}
+
+// Cache for playlist tracks
+const playlistTracksCache = new Map<string, PlaylistTrack[]>();
+
+async function fetchAllPlaylistTracks(playlistId: string, accessToken: string): Promise<PlaylistTrack[]> {
+  // Check cache first
+  const cachedTracks = playlistTracksCache.get(playlistId);
+  if (cachedTracks) {
+    return cachedTracks;
+  }
+
+  let url = `https://api.spotify.com/v1/playlists/${playlistId}/tracks`;
+  const allTracks: PlaylistTrack[] = [];
+
+  while (url) {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch playlist tracks');
+    }
+
+    const data: PaginatedResponse = await response.json();
+    allTracks.push(...data.items);
+    
+    // Move to next page or end loop if no more pages
+    url = data.next || '';
+  }
+
+  // Store in cache
+  playlistTracksCache.set(playlistId, allTracks);
+  return allTracks;
+}
+
 /**
  * Fetches artists from a playlist that match the search query
  */
@@ -20,21 +61,7 @@ export async function searchPlaylistArtists(
   query: string,
   accessToken: string
 ): Promise<Artist[]> {
-  const response = await fetch(
-    `https://api.spotify.com/v1/playlists/${playlistId}/tracks`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch playlist tracks');
-  }
-
-  const data = await response.json();
-  const tracks: PlaylistTrack[] = data.items;
+  const tracks = await fetchAllPlaylistTracks(playlistId, accessToken);
 
   // Get unique artists from all tracks
   const artists = new Map<string, Artist>();
@@ -60,23 +87,9 @@ export async function generateFilteredPlaylist(
   accessToken: string
 ): Promise<string> {
   console.log('Fetching tracks from original playlist...', { originalPlaylistId });
-  // Fetch all tracks from the original playlist
-  const response = await fetch(
-    `https://api.spotify.com/v1/playlists/${originalPlaylistId}/tracks`,
-    {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    }
-  );
-
-  if (!response.ok) {
-    console.error('Failed to fetch tracks:', await response.text());
-    throw new Error('Failed to fetch playlist tracks');
-  }
-
-  const data = await response.json();
-  const tracks: PlaylistTrack[] = data.items;
+  
+  // Use cached tracks if available
+  const tracks = playlistTracksCache.get(originalPlaylistId) || await fetchAllPlaylistTracks(originalPlaylistId, accessToken);
 
   // Filter tracks by selected artists
   console.log('Filtering tracks by selected artists...', { 
@@ -121,29 +134,38 @@ export async function generateFilteredPlaylist(
   const newPlaylist = await createResponse.json();
   console.log('New playlist created:', { playlistId: newPlaylist.id });
 
-  // Add tracks to new playlist
+  // Add tracks to new playlist in chunks of 100 (Spotify API limit)
   if (filteredTrackUris.length > 0) {
     console.log('Adding tracks to new playlist...');
-    const addTracksResponse = await fetch(
-      `https://api.spotify.com/v1/playlists/${newPlaylist.id}/tracks`,
-      {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          uris: filteredTrackUris,
-        }),
-      }
-    );
+    const chunkSize = 100;
+    
+    for (let i = 0; i < filteredTrackUris.length; i += chunkSize) {
+      const chunk = filteredTrackUris.slice(i, i + chunkSize);
+      const addTracksResponse = await fetch(
+        `https://api.spotify.com/v1/playlists/${newPlaylist.id}/tracks`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            uris: chunk,
+          }),
+        }
+      );
 
-    if (!addTracksResponse.ok) {
-      console.error('Failed to add tracks:', await addTracksResponse.text());
-      throw new Error('Failed to add tracks to new playlist');
+      if (!addTracksResponse.ok) {
+        console.error('Failed to add tracks:', await addTracksResponse.text());
+        throw new Error('Failed to add tracks to new playlist');
+      }
+      console.log(`Added tracks ${i + 1} to ${i + chunk.length}`);
     }
-    console.log('Successfully added tracks to playlist');
+    console.log('Successfully added all tracks to playlist');
   }
+
+  // Clear the cache after successful playlist generation
+  playlistTracksCache.delete(originalPlaylistId);
 
   return newPlaylist.id;
 }

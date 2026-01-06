@@ -1,10 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { LoginPage } from '../Login';
-import { signIn } from 'next-auth/react';
+import { signIn } from '@/lib/auth-client';
 
 // Mock next-auth
-jest.mock('next-auth/react', () => ({
+jest.mock('@/lib/auth-client', () => ({
   signIn: jest.fn()
 }));
 

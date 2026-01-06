@@ -1,12 +1,17 @@
 "use client";
-import { useState, useEffect, use } from "react";
-import { useSession } from "next-auth/react";
+import { useState, useEffect, use, useTransition } from "react";
+import { useSession } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
-import { RadioGroup, Combobox, Transition } from "@headlessui/react";
-import { Fragment } from "react";
-import { searchPlaylistArtists, generateFilteredPlaylist, getUserPlaylists } from "@/services/spotify";
+import { searchPlaylistArtists, generateFilteredPlaylist, fetchPlaylists } from "@/services/spotify";
 import { generateSubPlaylistName } from "@/utils/playlist";
 import { Navbar } from "@/components/layout/Navbar";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 
 type FilterType = "artists" | "genres";
 type FilterItem = { id: string; name: string };
@@ -17,66 +22,71 @@ export default function GenerateSubPlaylistPage({
   params: Promise<{ id: string }> 
 }) {
   const router = useRouter();
-  const { data: session } = useSession();
+  const { data } = useSession();
   const resolvedParams = use(params);
+  const [isPending, startTransition] = useTransition();
+  const [isSearchPending, startSearchTransition] = useTransition();
   const [filterType, setFilterType] = useState<FilterType>("artists");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilters, setSelectedFilters] = useState<FilterItem[]>([]);
   const [suggestions, setSuggestions] = useState<FilterItem[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [originalPlaylistName, setOriginalPlaylistName] = useState<string>("");
-  const [isSearching, setIsSearching] = useState(false);
 
   // Fetch original playlist name
   useEffect(() => {
     const fetchPlaylistName = async () => {
-      if (!session?.accessToken) return;
+      const token = data?.session.token;
+      if (!token) return;
 
-      try {
-        const response = await fetch(
-          `https://api.spotify.com/v1/playlists/${resolvedParams.id}`,
-          {
-            headers: {
-              Authorization: `Bearer ${session.accessToken}`,
-            },
-          }
-        );
+      startTransition(async () => {
+        try {
+          const response = await fetch(
+            `https://api.spotify.com/v1/playlists/${resolvedParams.id}`,
+            {
+              headers: {
+                Authorization: `Bearer ${token}`,
+              },
+            }
+          );
 
-        if (!response.ok) throw new Error('Failed to fetch playlist');
-        
-        const data = await response.json();
-        setOriginalPlaylistName(data.name);
-      } catch (err) {
-        setError('Failed to fetch playlist details');
-      }
+          if (!response.ok) throw new Error('Failed to fetch playlist');
+          
+          const data = await response.json();
+          setOriginalPlaylistName(data.name);
+        } catch (err) {
+          setError('Failed to fetch playlist details');
+        }
+      });
     };
 
-    fetchPlaylistName();
-  }, [resolvedParams.id, session?.accessToken]);
+    if (data?.session) {
+      fetchPlaylistName();
+    }
+  }, [resolvedParams.id, data?.session]);
 
-  const handleSearchChange = async (query: string) => {
+  const handleSearchChange = (query: string) => {
     setSearchQuery(query);
 
-    if (!query.trim() || !session?.accessToken) {
+    if (!query.trim()) {
       setSuggestions([]);
-      setIsSearching(false);
       return;
     }
 
-    setIsSearching(true);
-    try {
-      const artists = await searchPlaylistArtists(
-        resolvedParams.id,
-        query,
-        session.accessToken
-      );
-      setSuggestions(artists);
-    } catch (err) {
-      setError('Failed to fetch suggestions');
-    } finally {
-      setIsSearching(false);
+    const token = data?.session.token;
+    if (!token) {
+      setSuggestions([]);
+      return;
     }
+
+    startSearchTransition(async () => {
+      try {
+        const artists = await searchPlaylistArtists(resolvedParams.id, query);
+        setSuggestions(artists);
+      } catch (err) {
+        setError('Failed to fetch suggestions');
+      }
+    });
   };
 
   const handleFilterSelect = (filter: FilterItem) => {
@@ -91,52 +101,53 @@ export default function GenerateSubPlaylistPage({
     setSelectedFilters(selectedFilters.filter(f => f.id !== filterId));
   };
 
-  const handleGeneratePlaylist = async () => {
-    if (!session?.accessToken || selectedFilters.length === 0 || !session.user?.id) {
+  const handleGeneratePlaylist = () => {
+    const token = data?.session.token;
+    const userId = localStorage.getItem("userId");
+
+    if (!token || selectedFilters.length === 0 || !userId) {
       console.log('Generation cancelled: Missing required data', {
-        hasAccessToken: !!session?.accessToken,
+        hasAccessToken: !!token,
         selectedFiltersCount: selectedFilters.length,
-        hasUserId: !!session?.user?.id
+        hasUserId: !!userId
       });
       return;
     }
     
-    setIsLoading(true);
-    setError(null);
-    console.log('Starting playlist generation process...', {
-      originalPlaylistId: resolvedParams.id,
-      selectedArtists: selectedFilters.map(f => f.name)
+    startTransition(async () => {
+      setError(null);
+      console.log('Starting playlist generation process...', {
+        originalPlaylistId: resolvedParams.id,
+        selectedArtists: selectedFilters.map(f => f.name)
+      });
+
+      try {
+        // Get existing playlist names
+        console.log('Fetching existing playlists...');
+        const playlists = await fetchPlaylists();
+        const existingNames = playlists.map(p => p.name);
+        
+        // Generate new playlist name
+        const newPlaylistName = generateSubPlaylistName(existingNames, originalPlaylistName);
+        console.log('Generated new playlist name:', newPlaylistName);
+
+        // Create the filtered playlist
+        console.log('Creating filtered playlist...');
+        const newPlaylistId = await generateFilteredPlaylist(
+          resolvedParams.id,
+          newPlaylistName,
+          selectedFilters.map(f => f.id),
+          userId,
+        );
+
+        console.log('Playlist created successfully!', { newPlaylistId });
+        // Navigate to the new playlist
+        router.push(`/playlist/${newPlaylistId}`);
+      } catch (err) {
+        console.error('Failed to generate playlist:', err);
+        setError('Failed to generate playlist');
+      }
     });
-
-    try {
-      // Get existing playlist names
-      console.log('Fetching existing playlists...');
-      const playlists = await getUserPlaylists(session.accessToken);
-      const existingNames = playlists.map(p => p.name);
-      
-      // Generate new playlist name
-      const newPlaylistName = generateSubPlaylistName(existingNames, originalPlaylistName);
-      console.log('Generated new playlist name:', newPlaylistName);
-
-      // Create the filtered playlist
-      console.log('Creating filtered playlist...');
-      const newPlaylistId = await generateFilteredPlaylist(
-        resolvedParams.id,
-        newPlaylistName,
-        selectedFilters.map(f => f.id),
-        session.user.id,
-        session.accessToken
-      );
-
-      console.log('Playlist created successfully!', { newPlaylistId });
-      // Navigate to the new playlist
-      router.push(`/playlist/${newPlaylistId}`);
-    } catch (err) {
-      console.error('Failed to generate playlist:', err);
-      setError('Failed to generate playlist');
-    } finally {
-      setIsLoading(false);
-    }
   };
 
   return (
@@ -149,34 +160,29 @@ export default function GenerateSubPlaylistPage({
           {/* Filter Type Selection */}
           <div className="mb-12">
             <h2 className="text-xl font-semibold mb-4 text-center">Choose Filter Type</h2>
-            <RadioGroup value={filterType} onChange={setFilterType} className="flex justify-center gap-4">
-              <RadioGroup.Option value="artists">
-                {({ checked }) => (
-                  <button
-                    className={`px-6 py-3 rounded-full font-medium transition-colors ${
-                      checked
-                        ? "bg-green-500 text-white"
-                        : "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
-                    }`}
-                  >
-                    Filter by Artists
-                  </button>
-                )}
-              </RadioGroup.Option>
-              <RadioGroup.Option value="genres" disabled>
-                {({ checked }) => (
-                  <button
-                    className={`px-6 py-3 rounded-full font-medium transition-colors ${
-                      checked
-                        ? "bg-green-500 text-white"
-                        : "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
-                    } opacity-50 cursor-not-allowed`}
-                  >
-                    Filter by Genres
-                  </button>
-                )}
-              </RadioGroup.Option>
-            </RadioGroup>
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={() => setFilterType("artists")}
+                className={`px-6 py-3 rounded-full font-medium transition-colors ${
+                  filterType === "artists"
+                    ? "bg-green-500 text-white"
+                    : "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
+                }`}
+              >
+                Filter by Artists
+              </button>
+              <button
+                onClick={() => setFilterType("genres")}
+                disabled
+                className={`px-6 py-3 rounded-full font-medium transition-colors ${
+                  filterType === "genres"
+                    ? "bg-green-500 text-white"
+                    : "bg-zinc-800 text-gray-300 hover:bg-zinc-700"
+                } opacity-50 cursor-not-allowed`}
+              >
+                Filter by Genres
+              </button>
+            </div>
           </div>
 
           {/* Search and Filter Section */}
@@ -187,58 +193,46 @@ export default function GenerateSubPlaylistPage({
             
             {/* Search Input with Combobox */}
             <div className="relative mb-4">
-              <Combobox<FilterItem>
-                value={{ id: '', name: '' }}
-                onChange={(item: FilterItem) => {
-                  if (item && item.id !== '') {
-                    handleFilterSelect(item);
-                  }
-                }}
-                nullable={false}
-              >
-                <div className="relative">
-                  <Combobox.Input
-                    className="w-full px-4 py-3 bg-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-white placeholder-gray-400"
-                    placeholder={`Search for ${filterType === "artists" ? "artists" : "genres"}...`}
-                    onChange={(e) => handleSearchChange(e.target.value)}
-                    displayValue={() => searchQuery}
-                    autoComplete="off"
-                  />
-                  <Transition
-                    as={Fragment}
-                    leave="transition ease-in duration-100"
-                    leaveFrom="opacity-100"
-                    leaveTo="opacity-0"
-                    afterLeave={() => setSuggestions([])}
-                  >
-                    <Combobox.Options className="absolute w-full mt-1 bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 max-h-60 overflow-y-auto z-10">
-                      {isSearching ? (
-                        <div className="px-4 py-2 text-sm text-gray-400">
-                          Searching...
-                        </div>
-                      ) : suggestions.length === 0 && searchQuery !== '' ? (
-                        <div className="px-4 py-2 text-sm text-gray-400">
-                          No results found
-                        </div>
-                      ) : (
-                        suggestions.map((suggestion) => (
-                          <Combobox.Option
-                            key={suggestion.id}
-                            value={suggestion}
-                            className={({ active }) =>
-                              `px-4 py-2 cursor-pointer ${
-                                active ? 'bg-zinc-700 text-white' : 'text-gray-200'
-                              }`
-                            }
-                          >
-                            {suggestion.name}
-                          </Combobox.Option>
-                        ))
-                      )}
-                    </Combobox.Options>
-                  </Transition>
-                </div>
-              </Combobox>
+              <div className="relative">
+                <input
+                  type="text"
+                  className="w-full px-4 py-3 bg-zinc-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 text-white placeholder-gray-400"
+                  placeholder={`Search for ${filterType === "artists" ? "artists" : "genres"}...`}
+                  value={searchQuery}
+                  onChange={(e) => handleSearchChange(e.target.value)}
+                  autoComplete="off"
+                />
+                {(suggestions.length > 0 || isSearchPending || (suggestions.length === 0 && searchQuery !== '')) && (
+                  <div className="absolute w-full mt-1 bg-zinc-800 rounded-lg shadow-xl border border-zinc-700 max-h-60 overflow-y-auto z-10">
+                    <Command className="bg-zinc-800 border-0">
+                      <CommandList>
+                        {isSearchPending ? (
+                          <div className="px-4 py-2 text-sm text-gray-400">
+                            Searching...
+                          </div>
+                        ) : suggestions.length === 0 && searchQuery !== '' ? (
+                          <CommandEmpty className="text-gray-400 py-4">
+                            No results found
+                          </CommandEmpty>
+                        ) : (
+                          <CommandGroup>
+                            {suggestions.map((suggestion) => (
+                              <CommandItem
+                                key={suggestion.id}
+                                value={suggestion.name}
+                                onSelect={() => handleFilterSelect(suggestion)}
+                                className="text-gray-200 data-[selected=true]:bg-zinc-700 data-[selected=true]:text-white cursor-pointer"
+                              >
+                                {suggestion.name}
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        )}
+                      </CommandList>
+                    </Command>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Selected Filters */}
@@ -271,18 +265,25 @@ export default function GenerateSubPlaylistPage({
             </div>
           </div>
 
+          {/* Error Display */}
+          {error && (
+            <div className="text-red-500 bg-red-500/10 p-4 rounded-lg mb-4 text-center">
+              {error}
+            </div>
+          )}
+
           {/* Generate Button */}
           <div className="text-center">
             <button
               onClick={handleGeneratePlaylist}
-              disabled={isLoading || selectedFilters.length === 0}
+              disabled={isPending || selectedFilters.length === 0}
               className={`px-8 py-3 rounded-full font-medium transition-colors ${
-                isLoading || selectedFilters.length === 0
+                isPending || selectedFilters.length === 0
                   ? "bg-zinc-700 text-gray-400 cursor-not-allowed"
                   : "bg-green-500 text-white hover:bg-green-600"
               }`}
             >
-              {isLoading ? "Generating..." : "Generate Sub-Playlist"}
+              {isPending ? "Generating..." : "Generate Sub-Playlist"}
             </button>
           </div>
         </div>

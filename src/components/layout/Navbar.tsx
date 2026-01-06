@@ -1,7 +1,15 @@
-import { signOut, useSession } from "next-auth/react";
+"use client";
+
+import { useSession, signOut } from "@/lib/auth-client";
 import Link from "next/link";
 import Image from "next/image";
-import { Menu, MenuItems, MenuItem, MenuButton } from "@headlessui/react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -33,8 +41,8 @@ export function Navbar() {
         </Link>
       </div>
 
-      <Menu as="div" className="relative flex items-center">
-        <MenuButton className="rounded-full overflow-hidden hover:ring-2 hover:ring-green-500 transition">
+      <DropdownMenu>
+        <DropdownMenuTrigger className="rounded-full overflow-hidden hover:ring-2 hover:ring-green-500 transition focus:outline-none">
           <Image
             src={session?.user?.image || "/default-avatar.png"}
             alt="Profile"
@@ -42,48 +50,37 @@ export function Navbar() {
             height={40}
             className="rounded-full"
           />
-        </MenuButton>
+        </DropdownMenuTrigger>
 
-        <MenuItems className="absolute right-0 top-12 w-48 bg-zinc-700 rounded-md shadow-lg py-1">
-          <MenuItem>
-            {({ active }) => (
-              <Link
-                href="/dashboard"
-                className={`${
-                  active ? "bg-zinc-600" : ""
-                } block px-4 py-2 text-sm text-gray-200 hover:bg-zinc-600`}
-              >
-                Dashboard
-              </Link>
-            )}
-          </MenuItem>
-          <MenuItem>
-            {({ active }) => (
-              <Link
-                href="/settings"
-                className={`${
-                  active ? "bg-zinc-600" : ""
-                } block px-4 py-2 text-sm text-gray-200 hover:bg-zinc-600`}
-              >
-                Settings
-              </Link>
-            )}
-          </MenuItem>
-          <hr className="border-zinc-600 my-1" />
-          <MenuItem>
-            {({ active }) => (
-              <button
-                onClick={() => signOut()}
-                className={`${
-                  active ? "bg-zinc-600" : ""
-                } px-4 py-2 text-sm text-gray-200 w-full text-left hover:bg-zinc-600 block`}
-              >
-                Sign out
-              </button>
-            )}
-          </MenuItem>
-        </MenuItems>
-      </Menu>
+        <DropdownMenuContent
+          align="end"
+          className="w-48 bg-zinc-700 border-zinc-600 text-gray-200"
+        >
+          <DropdownMenuItem asChild>
+            <Link
+              href="/dashboard"
+              className="cursor-pointer focus:bg-zinc-600"
+            >
+              Dashboard
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link
+              href="/settings"
+              className="cursor-pointer focus:bg-zinc-600"
+            >
+              Settings
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="bg-zinc-600" />
+          <DropdownMenuItem
+            onClick={() => signOut()}
+            className="cursor-pointer focus:bg-zinc-600"
+          >
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </nav>
   );
 }

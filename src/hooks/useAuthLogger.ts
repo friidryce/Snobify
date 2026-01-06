@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Session } from "next-auth";
+import type { Session } from "@/lib/auth";
 
 export function useAuthLogger(session: Session | null) {
   useEffect(() => {

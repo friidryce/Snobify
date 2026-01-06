@@ -1,5 +1,5 @@
 "use client";
-import { signIn } from "next-auth/react";
+import { signIn } from "@/lib/auth-client";
 import { SpotifyIcon } from "@/components/icons/SpotifyIcon";
 import { Footer } from "../layout/Footer";
 
@@ -15,7 +15,7 @@ export function LoginPage() {
           </p>
 
           <button
-            onClick={() => signIn("spotify")}
+            onClick={() => signIn.social({ provider: "spotify" })}
             className="flex items-center gap-2 px-6 py-3 rounded-full bg-[#1DB954] hover:bg-[#1ed760] text-white font-medium transition-colors"
           >
             <SpotifyIcon className="w-5 h-5" />

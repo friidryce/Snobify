@@ -1,26 +1,35 @@
-interface Artist {
-  id: string;
-  name: string;
-}
+"use server";
 
-interface Track {
-  id: string;
-  artists: Artist[];
-}
-
-interface PlaylistTrack {
-  track: Track;
-}
-
-interface PaginatedResponse {
-  items: PlaylistTrack[];
-  next: string | null;
-}
-
+import type { Artist, PlaylistTrack, PaginatedResponse, PlaylistSummary, PlaylistsApiResponse, Playlist } from "@/types/spotify";
+import { auth } from "@/lib/auth";
+import { headers } from "next/headers";
 // Cache for playlist tracks
 const playlistTracksCache = new Map<string, PlaylistTrack[]>();
 
-async function fetchAllPlaylistTracks(playlistId: string, accessToken: string): Promise<PlaylistTrack[]> {
+async function getSpotifyAccessToken(): Promise<string> {
+  const headersList = await headers();
+  
+  // Convert Headers object to plain object format that better-auth expects
+  const headersObj: Record<string, string> = {};
+  headersList.forEach((value, key) => {
+    headersObj[key] = value;
+  });
+  
+  const { accessToken } = await auth.api.getAccessToken({
+    body: {
+      providerId: "spotify"
+    },
+    headers: headersObj
+  });
+
+  return accessToken;
+}
+
+async function fetchAllPlaylistTracks(playlistId: string): Promise<PlaylistTrack[]> {
+  const accessToken = await getSpotifyAccessToken();
+  if (!accessToken) {
+    throw new Error("Failed to get Spotify access token");
+  }
   // Check cache first
   const cachedTracks = playlistTracksCache.get(playlistId);
   if (cachedTracks) {
@@ -41,7 +50,7 @@ async function fetchAllPlaylistTracks(playlistId: string, accessToken: string): 
       throw new Error('Failed to fetch playlist tracks');
     }
 
-    const data: PaginatedResponse = await response.json();
+    const data: PaginatedResponse<PlaylistTrack> = await response.json();
     allTracks.push(...data.items);
     
     // Move to next page or end loop if no more pages
@@ -59,9 +68,8 @@ async function fetchAllPlaylistTracks(playlistId: string, accessToken: string): 
 export async function searchPlaylistArtists(
   playlistId: string,
   query: string,
-  accessToken: string
 ): Promise<Artist[]> {
-  const tracks = await fetchAllPlaylistTracks(playlistId, accessToken);
+  const tracks = await fetchAllPlaylistTracks(playlistId);
 
   // Get unique artists from all tracks
   const artists = new Map<string, Artist>();
@@ -84,12 +92,11 @@ export async function generateFilteredPlaylist(
   newPlaylistName: string,
   selectedArtistIds: string[],
   userId: string,
-  accessToken: string
 ): Promise<string> {
   console.log('Fetching tracks from original playlist...', { originalPlaylistId });
   
   // Use cached tracks if available
-  const tracks = playlistTracksCache.get(originalPlaylistId) || await fetchAllPlaylistTracks(originalPlaylistId, accessToken);
+  const tracks = playlistTracksCache.get(originalPlaylistId) || await fetchAllPlaylistTracks(originalPlaylistId);
 
   // Filter tracks by selected artists
   console.log('Filtering tracks by selected artists...', { 
@@ -110,6 +117,10 @@ export async function generateFilteredPlaylist(
 
   // Create new playlist
   console.log('Creating new playlist...', { newPlaylistName });
+  const accessToken = await getSpotifyAccessToken();
+  if (!accessToken) {
+    throw new Error("Failed to get Spotify access token");
+  }
   const createResponse = await fetch(
     `https://api.spotify.com/v1/users/${userId}/playlists`,
     {
@@ -171,22 +182,75 @@ export async function generateFilteredPlaylist(
 }
 
 /**
- * Fetches all playlists for the current user
+ * Fetches a single playlist by ID
  */
-export async function getUserPlaylists(accessToken: string): Promise<{ id: string; name: string }[]> {
-  const response = await fetch('https://api.spotify.com/v1/me/playlists', {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-    },
+export async function fetchPlaylist(playlistId: string): Promise<Playlist> {
+  const accessToken = await getSpotifyAccessToken();
+  if (!accessToken) {
+    throw new Error("Failed to get Spotify access token");
+  }
+
+  const response = await fetch(`https://api.spotify.com/v1/playlists/${playlistId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
   });
 
+  if (!response.ok) throw new Error('Failed to fetch playlist');
+
+  return await response.json();
+}
+
+/**
+ * Fetches all playlists for the current user
+ */
+export async function fetchPlaylists(): Promise<PlaylistSummary[]> {
+  const accessToken = await getSpotifyAccessToken();
+  if (!accessToken) {
+    throw new Error("Failed to get Spotify access token");
+  }
+
+  const playlists: PlaylistSummary[] = [];
+  let url: string | null = 'https://api.spotify.com/v1/me/playlists';
+
+  while (url) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!res.ok) throw new Error('Failed to fetch playlists');
+
+    const data: PlaylistsApiResponse = await res.json();
+    playlists.push(...data.items);
+    url = data.next;
+  }
+
+  return playlists;
+}
+
+/**
+ * Searches for tracks on Spotify
+ * Uses Next.js cache for automatic request deduplication and caching
+ */
+export async function searchTracks(query: string): Promise<any[]> {
+  const accessToken = await getSpotifyAccessToken();
+  if (!accessToken) {
+    throw new Error("Failed to get Spotify access token");
+  }
+
+  const response = await fetch(
+    `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=track&limit=5`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+      // Use Next.js router cache - automatically deduplicates and caches requests
+      next: { revalidate: 3600 } // Cache for 1 hour
+    }
+  );
+
   if (!response.ok) {
-    throw new Error('Failed to fetch user playlists');
+    throw new Error('Failed to search tracks');
   }
 
   const data = await response.json();
-  return data.items.map((item: any) => ({
-    id: item.id,
-    name: item.name,
-  }));
+  return data.tracks?.items || [];
 } 

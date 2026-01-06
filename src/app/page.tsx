@@ -1,76 +1,69 @@
 "use client";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 import { useAuthLogger } from "@/hooks/useAuthLogger";
 import { LoginPage } from "@/components/auth/Login";
 import { Navbar } from "@/components/layout/Navbar";
-import { useEffect, useRef, useState } from "react";
+import { useState, use, Suspense, useTransition, useEffect } from "react";
+import { searchTracks } from "@/services/spotify";
+
+function SearchResultsContent({ tracksPromise }: { tracksPromise: Promise<any[]> }) {
+  const tracks = use(tracksPromise);
+  
+  return (
+    <div className="absolute w-full mt-2 bg-zinc-800 rounded-lg shadow-lg max-h-96 overflow-y-auto z-10">
+      {tracks.length === 0 ? (
+        <div className="px-4 py-3 text-gray-400">No results found</div>
+      ) : (
+        tracks.map((result) => (
+          <div
+            key={result.id}
+            className="px-4 py-3 hover:bg-zinc-700 cursor-pointer transition"
+          >
+            <div className="text-white">{result.name}</div>
+            <div className="text-sm text-gray-400">
+              {result.artists[0]?.name}
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function SearchResults({ tracksPromise }: { tracksPromise: Promise<any[]> }) {
+  return (
+    <Suspense fallback={
+      <div className="absolute w-full mt-2 bg-zinc-800 rounded-lg shadow-lg z-10">
+        <div className="px-4 py-3 text-gray-400">Searching...</div>
+      </div>
+    }>
+      <SearchResultsContent tracksPromise={tracksPromise} />
+    </Suspense>
+  );
+}
 
 export default function Home() {
-  const { data: session, status } = useSession();
+  const { data: session, isPending } = useSession();
+  const status = session ? "authenticated" : isPending ? "loading" : "unauthenticated";
   useAuthLogger(session);
 
   const [searchQuery, setSearchQuery] = useState<string>("");
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [selectedItem, setSelectedItem] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [cache, setCache] = useState<{ [value: string]: any }>({});
-  const debounceTimer = useRef<NodeJS.Timeout | null>(null);
-
-  const fetchAutocompleteOptions = async (value: string) => {
-    setLoading(true);
-
-    if (cache[value]) {
-      setSearchResults(cache[value]);
-      setLoading(false);
-      return;
-    }
-
-    // fetch Spotify API
-    try {
-      const response = await fetch(
-        `https://api.spotify.com/v1/search?q=${encodeURIComponent(
-          value
-        )}&type=track&limit=5`,
-        {
-          headers: {
-            Authorization: `Bearer ${session?.accessToken}`,
-          },
-        }
-      );
-      const data = await response.json();
-
-      setCache((oldCache) => ({
-        ...oldCache,
-        [value]: data.tracks.items,
-      }));
-
-      setSearchResults(data.tracks.items);
-    } catch (err) {
-      // TODO: Display error message
-      console.error("Error fetching search results: ", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
+  const [tracksPromise, setTracksPromise] = useState<Promise<any[]> | null>(null);
+  const [isSearchPending, startTransition] = useTransition();
+  
   useEffect(() => {
-    if (debounceTimer.current) {
-      clearTimeout(debounceTimer.current);
-    }
-
-    debounceTimer.current = setTimeout(() => {
-      if (searchQuery) {
-        fetchAutocompleteOptions(searchQuery);
+    const delayDebounceFn = setTimeout(() => {
+      if (searchQuery.trim()) {
+        // Start the server action fetch and store the promise locally
+        startTransition(() => {
+          setTracksPromise(searchTracks(searchQuery));
+        });
       } else {
-        setSearchResults([]);
+        setTracksPromise(null);
       }
-    }, 300); // Adjust the delay as needed
+    }, 150); // 150ms debounce for faster response
 
-    return () => {
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-      }
-    };
+    return () => clearTimeout(delayDebounceFn);
   }, [searchQuery]);
 
   return (
@@ -81,7 +74,7 @@ export default function Home() {
         <div className="min-h-screen bg-zinc-950 text-white">
           <Navbar />
           <div className="flex-1 flex items-center justify-center">
-            <div className="w-1/2 relative">
+            <div className="w-1/2 relative mt-6">
               <input
                 type="text"
                 placeholder="Search for songs, artists, or albums..."
@@ -90,19 +83,9 @@ export default function Home() {
               />
 
               {/* Autocomplete dropdown */}
-              <div className=" w-full mt-2 bg-zinc-800 rounded-lg shadow-lg max-h-96 overflow-y-auto">
-                {searchResults.map((result) => (
-                  <div
-                    key={result.id}
-                    className="px-4 py-3 hover:bg-zinc-700 cursor-pointer transition"
-                  >
-                    <div className="text-white">{result.name}</div>
-                    <div className="text-sm text-gray-400">
-                      {result.artists[0].name}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              {tracksPromise && (
+                <SearchResults tracksPromise={tracksPromise} />
+              )}
             </div>
           </div>
         </div>

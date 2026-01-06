@@ -2,16 +2,20 @@
 import React from "react";
 import { Navbar } from "@/components/layout/Navbar";
 import { LoginPage } from "@/components/auth/Login";
-import { useSession } from "next-auth/react";
+import { useSession } from "@/lib/auth-client";
 
 export default function PlaylistsLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { status } = useSession();
+  const { data: session, isPending } = useSession();
 
-  if (status !== "authenticated") {
+  if (isPending) {
+    return <div>Loading...</div>;
+  }
+
+  if (!session) {
     return <LoginPage />;
   }
 
